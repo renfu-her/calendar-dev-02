@@ -158,20 +158,14 @@ class _StartPageState extends State<StartPage> {
                 'full_day': 1,
               };
 
-              // Send eventData to API
-              try {
-                final response = await dio.post(
-                    'https://calendar-dev.dev-laravel.co/api/calendar/events',
-                    data: eventData);
+              final response = await dio.post(
+                  'https://calendar-dev.dev-laravel.co/api/calendar/events',
+                  data: eventData);
 
-                if (response.statusCode == 200) {
-                  await _reloadEvents();
-                } else {
-                  print('Error while adding event: ${response.data}');
-                }
-              } catch (e) {
-                print('Error: $e');
-                // Optionally, show an error message to the user.
+              if (response.statusCode == 200) {
+                await _reloadEvents();
+              } else {
+                print('Error while adding event: ${response.data}');
               }
 
               _startDateController.clear(); // Clear the controllers
