@@ -4,7 +4,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:dio/dio.dart';
 import 'utils.dart';
+
+Dio dio = Dio();
 
 void main() {
   initializeDateFormatting().then((_) => runApp(MyApp()));
@@ -29,6 +32,9 @@ class StartPage extends StatefulWidget {
 }
 
 class _StartPageState extends State<StartPage> {
+  final _eventTitleController = TextEditingController();
+  final _startDateController = TextEditingController();
+
   late final ValueNotifier<List<Event>> _selectedEvents;
   CalendarFormat _calendarFormat = CalendarFormat.month;
   RangeSelectionMode _rangeSelectionMode = RangeSelectionMode.toggledOff;
@@ -104,6 +110,91 @@ class _StartPageState extends State<StartPage> {
     }
   }
 
+  void _onAddEventButtonPressed() {
+    // Set the _startDateController's value to the currently selected date
+    _startDateController.text = _selectedDay != null
+        ? '${_selectedDay!.year}-${_selectedDay!.month.toString().padLeft(2, '0')}-${_selectedDay!.day.toString().padLeft(2, '0')}'
+        : '';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('新增事件'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _startDateController,
+              decoration: InputDecoration(
+                labelText: '開始日期',
+                hintText: '例如：2023-09-01',
+              ),
+              readOnly:
+                  true, // Make it read-only as we want the date to be taken from the calendar selection
+            ),
+            TextField(
+              controller: _eventTitleController,
+              decoration: InputDecoration(
+                hintText: '事件名稱',
+              ),
+              maxLines: 5, // Allows multiple lines
+              keyboardType: TextInputType.multiline,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            child: Text('取消'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          TextButton(
+            child: Text('確認'),
+            onPressed: () async {
+              final Map<String, dynamic> eventData = {
+                "start_date": _startDateController.text,
+                "title": _eventTitleController.text,
+                'member_id': 1,
+                'days': 1,
+                'full_day': 1,
+              };
+
+              // Send eventData to API
+              try {
+                final response = await dio.post(
+                    'https://calendar-dev.dev-laravel.co/api/calendar/events',
+                    data: eventData);
+
+                if (response.statusCode == 200) {
+                  await _reloadEvents();
+                } else {
+                  print('Error while adding event: ${response.data}');
+                }
+              } catch (e) {
+                print('Error: $e');
+                // Optionally, show an error message to the user.
+              }
+
+              _startDateController.clear(); // Clear the controllers
+              _eventTitleController.clear();
+
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _reloadEvents() async {
+    final eventsFromAPI = await fetchEventsFromAPI();
+    setState(() {
+      kEvents.clear(); // 清除当前的事件
+      kEvents.addAll(eventsFromAPI);
+      // 更新当前选中日期的事件
+      _selectedEvents.value = _getEventsForDay(_selectedDay!);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -168,6 +259,10 @@ class _StartPageState extends State<StartPage> {
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        child: Icon(Icons.add),
+        onPressed: _onAddEventButtonPressed,
       ),
     );
   }
