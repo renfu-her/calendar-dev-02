@@ -46,7 +46,7 @@ class _StartPageState extends State<StartPage> {
     fetchEventsFromAPI().then((eventsFromAPI) {
       setState(() {
         kEvents.addAll(eventsFromAPI); // Make sure kEvents is not final anymore
-        // 你還需要根據從 API 獲取的數據來更新其他相關變數，如 _kEventSource
+        _selectedEvents.value = _getEventsForDay(_selectedDay!);
       });
     });
   }
