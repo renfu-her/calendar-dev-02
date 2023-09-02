@@ -1,15 +1,15 @@
 import 'dart:collection';
-import 'dart:convert';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 
 Dio dio = Dio();
 
-/// Example event class.
 class Event {
   final String title;
+  int? isActive;
 
-  const Event(this.title);
+  Event(this.title, this.isActive);
 
   @override
   String toString() => title;
@@ -17,8 +17,10 @@ class Event {
 
 Future<LinkedHashMap<DateTime, List<Event>>> fetchEventsFromAPI() async {
   Dio dio = Dio();
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  String? userId = prefs.getString('user_id');
   final response = await dio
-      .get('https://calendar-dev.dev-laravel.co/api/calendar/member/1');
+      .get('https://calendar-dev.dev-laravel.co/api/calendar/member/$userId');
 
   if (response.statusCode == 200) {
     LinkedHashMap<DateTime, List<Event>> eventsMap =
@@ -27,13 +29,14 @@ Future<LinkedHashMap<DateTime, List<Event>>> fetchEventsFromAPI() async {
       hashCode: getHashCode,
     );
 
-    // 根據你的 API 返回的數據格式來解析 JSON。
-    // 假設你的數據是 { "2023-09-01": ["Event 1", "Event 2"], ... }
     Map<String, dynamic> data = response.data;
     data.forEach((key, value) {
       DateTime date = DateTime.parse(key);
-      List<Event> events =
-          (value as List).map((e) => Event(e.toString())).toList();
+      // 修改以下行以從新的JSON格式中提取事件標題
+      List<Event> events = (value as List)
+          .map((e) => Event(e['title'].toString(), e['is_active'] ?? 0))
+          .toList();
+
       eventsMap[date] = events;
     });
 

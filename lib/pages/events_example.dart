@@ -49,6 +49,21 @@ class _TableEventsExampleState extends State<TableEventsExample> {
     ];
   }
 
+  Future<void> updateEventAPI(Event event) async {
+    // 在此处调用更新事件的API
+    print('Update event: $event');
+    // 实际API调用可能类似于：
+    // await dio.put('https://your-api-endpoint.com/update', data: event.toJson());
+  }
+
+  Future<void> deleteEventAPI(Event event) async {
+    // 在此处调用删除事件的API
+    print('Delete event: $event');
+    // 实际API调用可能类似于：
+    await dio.delete(
+        'https://calendar-dev.dev-laravel.co/caendar/delete/${event.id}');
+  }
+
   void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
     if (!isSameDay(_selectedDay, selectedDay)) {
       setState(() {
@@ -138,6 +153,31 @@ class _TableEventsExampleState extends State<TableEventsExample> {
                       child: ListTile(
                         onTap: () => print('${value[index]}'),
                         title: Text('${value[index]}'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.update),
+                              onPressed: () async {
+                                await updateEventAPI(value[index]);
+                                print(
+                                    'Update button pressed for event: ${value[index]}');
+                              },
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.delete),
+                              onPressed: () async {
+                                await deleteEventAPI(value[index]);
+                                print(
+                                    'Delete button pressed for event: ${value[index]}');
+                                // 可能您还想在删除事件后更新UI
+                                setState(() {
+                                  value.removeAt(index);
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },

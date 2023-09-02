@@ -1,262 +1,191 @@
-// Copyright 2019 Aleksander Woźniak
-// SPDX-License-Identifier: Apache-2.0
-
 import 'package:flutter/material.dart';
-import 'package:intl/date_symbol_data_local.dart';
-import 'package:table_calendar/table_calendar.dart';
 import 'package:dio/dio.dart';
-import 'utils.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:calendar/events.dart';
 
 Dio dio = Dio();
 
-void main() {
-  initializeDateFormatting().then((_) => runApp(MyApp()));
-}
+void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Calendar Example',
+      title: '登入或者註冊',
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: StartPage(),
+      home: LoginPage(),
+      routes: {
+        '/login': (_) => LoginPage(),
+        '/register': (_) => RegisterPage(),
+        '/events': (_) => StartPage(),
+      },
     );
   }
 }
 
-class StartPage extends StatefulWidget {
+class LoginPage extends StatefulWidget {
   @override
-  _StartPageState createState() => _StartPageState();
+  _LoginPageState createState() => _LoginPageState();
 }
 
-class _StartPageState extends State<StartPage> {
-  final _eventTitleController = TextEditingController();
-  final _startDateController = TextEditingController();
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
 
-  late final ValueNotifier<List<Event>> _selectedEvents;
-  CalendarFormat _calendarFormat = CalendarFormat.month;
-  RangeSelectionMode _rangeSelectionMode = RangeSelectionMode.toggledOff;
-  DateTime _focusedDay = DateTime.now();
-  DateTime? _selectedDay;
-  DateTime? _rangeStart;
-  DateTime? _rangeEnd;
+  void _login() async {
+    // 这里是发送请求到API的代码
 
-  @override
-  void initState() {
-    super.initState();
-    _selectedDay = _focusedDay;
-    _selectedEvents = ValueNotifier(_getEventsForDay(_selectedDay!));
+    try {
+      final response = await dio.post(
+        'https://calendar-dev.dev-laravel.co/api/auth/login',
+        data: {
+          'email': _emailController.text,
+          'password': _passwordController.text,
+        },
+      );
+      if (response.statusCode == 200 && response.data['success']) {
+        Fluttertoast.showToast(msg: '登入成功！', gravity: ToastGravity.CENTER);
+        // 儲存 token 到 SharedPreferences
+        SharedPreferences prefs = await SharedPreferences.getInstance();
+        try {
+          await prefs.setString('token', response.data['token']);
+          await prefs.setString('user_id',
+              response.data['user']['id'].toString()); // 注意，这里我们把 id 转换为字符串
+        } catch (e) {
+          print('Error saving to SharedPreferences: $e');
+        }
 
-    fetchEventsFromAPI().then((eventsFromAPI) {
-      setState(() {
-        kEvents.addAll(eventsFromAPI); // Make sure kEvents is not final anymore
-        _selectedEvents.value = _getEventsForDay(_selectedDay!);
-      });
-    });
-  }
+        String? token = prefs.getString('token');
 
-  @override
-  void dispose() {
-    _selectedEvents.dispose();
-    super.dispose();
-  }
-
-  List<Event> _getEventsForDay(DateTime day) {
-    // Implementation example
-    return kEvents[day] ?? [];
-  }
-
-  List<Event> _getEventsForRange(DateTime start, DateTime end) {
-    // Implementation example
-    final days = daysInRange(start, end);
-
-    return [
-      for (final d in days) ..._getEventsForDay(d),
-    ];
-  }
-
-  void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
-    if (!isSameDay(_selectedDay, selectedDay)) {
-      setState(() {
-        _selectedDay = selectedDay;
-        _focusedDay = focusedDay;
-        _rangeStart = null; // Important to clean those
-        _rangeEnd = null;
-        _rangeSelectionMode = RangeSelectionMode.toggledOff;
-      });
-
-      _selectedEvents.value = _getEventsForDay(selectedDay);
+        if (token == null) {
+          // 如果由於某种原因 token 未保存成功，可以在此处理或导航到登录页面。
+          Navigator.pushReplacementNamed(context, '/login');
+        } else {
+          // token 存在，跳轉到主頁
+          Navigator.pushReplacementNamed(context, '/events');
+        }
+      } else {
+        Fluttertoast.showToast(
+          msg: response.data['error'],
+          gravity: ToastGravity.CENTER,
+        );
+      }
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: '登入失敗！',
+        gravity: ToastGravity.CENTER,
+      );
+      ;
     }
   }
 
-  void _onRangeSelected(DateTime? start, DateTime? end, DateTime focusedDay) {
-    setState(() {
-      _selectedDay = null;
-      _focusedDay = focusedDay;
-      _rangeStart = start;
-      _rangeEnd = end;
-      _rangeSelectionMode = RangeSelectionMode.toggledOn;
-    });
-
-    // `start` or `end` could be null
-    if (start != null && end != null) {
-      _selectedEvents.value = _getEventsForRange(start, end);
-    } else if (start != null) {
-      _selectedEvents.value = _getEventsForDay(start);
-    } else if (end != null) {
-      _selectedEvents.value = _getEventsForDay(end);
-    }
-  }
-
-  void _onAddEventButtonPressed() {
-    // Set the _startDateController's value to the currently selected date
-    _startDateController.text = _selectedDay != null
-        ? '${_selectedDay!.year}-${_selectedDay!.month.toString().padLeft(2, '0')}-${_selectedDay!.day.toString().padLeft(2, '0')}'
-        : '';
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('新增事件'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _startDateController,
-              decoration: InputDecoration(
-                labelText: '開始日期',
-                hintText: '例如：2023-09-01',
-              ),
-              readOnly:
-                  true, // Make it read-only as we want the date to be taken from the calendar selection
-            ),
-            TextField(
-              controller: _eventTitleController,
-              decoration: InputDecoration(
-                hintText: '事件名稱',
-              ),
-              maxLines: 5, // Allows multiple lines
-              keyboardType: TextInputType.multiline,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            child: Text('取消'),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          TextButton(
-            child: Text('確認'),
-            onPressed: () async {
-              final Map<String, dynamic> eventData = {
-                "start_date": _startDateController.text,
-                "title": _eventTitleController.text,
-                'member_id': 1,
-                'days': 1,
-                'full_day': 1,
-              };
-
-              final response = await dio.post(
-                  'https://calendar-dev.dev-laravel.co/api/calendar/events',
-                  data: eventData);
-
-              if (response.statusCode == 200) {
-                await _reloadEvents();
-              } else {
-                print('Error while adding event: ${response.data}');
-              }
-
-              _startDateController.clear(); // Clear the controllers
-              _eventTitleController.clear();
-
-              Navigator.of(context).pop();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _reloadEvents() async {
-    final eventsFromAPI = await fetchEventsFromAPI();
-    setState(() {
-      kEvents.clear(); // 清除当前的事件
-      kEvents.addAll(eventsFromAPI);
-      // 更新当前选中日期的事件
-      _selectedEvents.value = _getEventsForDay(_selectedDay!);
-    });
+  void _goToRegister() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => RegisterPage()));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('日曆'),
-      ),
-      body: Column(
-        children: [
-          TableCalendar<Event>(
-            firstDay: kFirstDay,
-            lastDay: kLastDay,
-            focusedDay: _focusedDay,
-            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            rangeStartDay: _rangeStart,
-            rangeEndDay: _rangeEnd,
-            calendarFormat: _calendarFormat,
-            rangeSelectionMode: _rangeSelectionMode,
-            eventLoader: _getEventsForDay,
-            startingDayOfWeek: StartingDayOfWeek.monday,
-            calendarStyle: const CalendarStyle(
-              // Use `CalendarStyle` to customize the UI
-              outsideDaysVisible: false,
+      appBar: AppBar(title: Text('登入')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: 'Email'),
             ),
-            onDaySelected: _onDaySelected,
-            onRangeSelected: _onRangeSelected,
-            onFormatChanged: (format) {
-              if (_calendarFormat != format) {
-                setState(() {
-                  _calendarFormat = format;
-                });
-              }
-            },
-            onPageChanged: (focusedDay) {
-              _focusedDay = focusedDay;
-            },
-          ),
-          const SizedBox(height: 8.0),
-          Expanded(
-            child: ValueListenableBuilder<List<Event>>(
-              valueListenable: _selectedEvents,
-              builder: (context, value, _) {
-                return ListView.builder(
-                  itemCount: value.length,
-                  itemBuilder: (context, index) {
-                    return Container(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 12.0,
-                        vertical: 4.0,
-                      ),
-                      decoration: BoxDecoration(
-                        border: Border.all(),
-                        borderRadius: BorderRadius.circular(12.0),
-                      ),
-                      child: ListTile(
-                        onTap: () => print('${value[index]}'),
-                        title: Text('${value[index]}'),
-                      ),
-                    );
-                  },
-                );
-              },
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: '密碼'),
+              obscureText: true,
             ),
-          ),
-        ],
+            ElevatedButton(onPressed: _login, child: Text('登入')),
+            TextButton(onPressed: _goToRegister, child: Text('前往註冊'))
+          ],
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        child: Icon(Icons.add),
-        onPressed: _onAddEventButtonPressed,
+    );
+  }
+}
+
+class RegisterPage extends StatefulWidget {
+  @override
+  _RegisterPageState createState() => _RegisterPageState();
+}
+
+class _RegisterPageState extends State<RegisterPage> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+
+  void _register() async {
+    if (_passwordController.text != _confirmPasswordController.text) {
+      Fluttertoast.showToast(
+        msg: '密碼不匹配！',
+        gravity: ToastGravity.CENTER,
+      );
+      return;
+    }
+
+    // 发送请求到API
+    final response = await dio.post(
+      'https://calendar-dev.dev-laravel.co/api/auth/register',
+      data: {
+        'name': _nameController.text,
+        'email': _emailController.text,
+        'password': _passwordController.text,
+        'password_confirmation': _confirmPasswordController.text,
+      },
+    );
+
+    if (response.statusCode == 200 && response.data['success']) {
+      Fluttertoast.showToast(msg: '註冊成功！', gravity: ToastGravity.CENTER);
+      Navigator.pop(context); // 返回登录页面
+    } else {
+      Fluttertoast.showToast(
+        msg: response.data['error'],
+        gravity: ToastGravity.CENTER,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('註冊')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            TextField(
+              controller: _nameController,
+              decoration: InputDecoration(labelText: '名稱'),
+            ),
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(labelText: 'Email'),
+            ),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: '密碼'),
+              obscureText: true,
+            ),
+            TextField(
+              controller: _confirmPasswordController,
+              decoration: InputDecoration(labelText: '確認密碼'),
+              obscureText: true,
+            ),
+            ElevatedButton(onPressed: _register, child: Text('註冊'))
+          ],
+        ),
       ),
     );
   }
